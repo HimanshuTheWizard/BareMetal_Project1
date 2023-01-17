@@ -22,8 +22,76 @@
   #warning "FPU is not initialized, but the project is compiling for an FPU. Please initialize the FPU before use."
 #endif
 
+/*---------SRAM AND STACK LAYOUT---------*/
+#define SIZE_OF_TASK_STACK			(1024U)
+#define SIZE_OF_SCHEDULER_STACK		(1024U)
+
+#define START_OF_SRAM				(0x20000000U)
+#define SIZE_OF_SRAM				((192)*(1024))
+#define END_OF_SRAM					((START_OF_SRAM) + (SIZE_OF_SRAM))
+
+#define TASK1_STACK_START			(END_OF_SRAM)
+#define TASK2_STACK_START			((END_OF_SRAM) + 1*(SIZE_OF_TASK_STACK))
+#define TASK3_STACK_START			((END_OF_SRAM) + 2*(SIZE_OF_TASK_STACK))
+#define TASK4_STACK_START			((END_OF_SRAM) + 3*(SIZE_OF_TASK_STACK))
+#define SCHEDULER_STACK_START		((END_OF_SRAM) + 4*(SIZE_OF_TASK_STACK))
+
+/*---------CLOCK CONFIGURATION---------*/
+#define HSI_CLOCK					(16000000)
+#define SYSTICK_CLOCK				(HSI_CLOCK)
+
+/*---------USER TASK FUNCTION DECLARATION---------*/
+void task1_handler(void);
+void task2_handler(void);
+void task3_handler(void);
+void task4_handler(void);
+
+void SysTick_Init(uint32_t count_val);
+
 int main(void)
 {
+	SysTick_Init(1000);
     /* Loop forever */
 	for(;;);
 }
+
+void task1_handler(void)
+{
+
+}
+
+void task2_handler(void)
+{
+
+}
+void task3_handler(void)
+{
+
+}
+void task4_handler(void)
+{
+
+}
+void SysTick_Init(uint32_t freq)
+{
+	uint32_t count_val 	=  SYSTICK_CLOCK/freq;
+	uint32_t *pSTK_LOAD = (uint32_t *)0xE000E014;
+	uint32_t *STK_CTRL  = (uint32_t *)0xE000E010;
+
+	*pSTK_LOAD &= ~(0x00FFFFFF);
+	*pSTK_LOAD |= count_val;				//load the value
+	*STK_CTRL  |= (1<<2);   				//set systick clock as processor clock
+	*STK_CTRL  |= (1<<1);					//enable systick
+	*STK_CTRL  |= (1<<0);					//starts the systick counter
+}
+
+
+void SysTick_Handler(void)
+{
+
+}
+
+
+
+
+

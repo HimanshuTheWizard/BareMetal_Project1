@@ -22,7 +22,9 @@
   #warning "FPU is not initialized, but the project is compiling for an FPU. Please initialize the FPU before use."
 #endif
 
+
 /*---------SRAM AND STACK LAYOUT---------*/
+#define MAX_TASKS_COUNT				(4)
 #define SIZE_OF_TASK_STACK			(1024U)
 #define SIZE_OF_SCHEDULER_STACK		(1024U)
 
@@ -47,11 +49,32 @@ void task3_handler(void);
 void task4_handler(void);
 
 void SysTick_Init(uint32_t count_val);
+void Tasks_Stack_Init(void);
+void Enable_Processor_Faults(void);
+uint32_t Get_Current_Task_PSP(void);
+
+__attribute__((naked)) void Scheduler_Stack_Init(uint32_t scheduler_stack_start);
+__attribute__((naked)) void Switch_SP_to_PSP(void);
+
+
+/*---------GLOBAL VARIABLES---------*/
+uint32_t User_tasks_psps[MAX_TASKS_COUNT] = {TASK1_STACK_START, TASK2_STACK_START, TASK3_STACK_START, TASK4_STACK_START};
+uint32_t task_handler[MAX_TASKS_COUNT] = {(uint32_t)task1_handler, (uint32_t)task2_handler, (uint32_t)task3_handler, (uint32_t)task4_handler};
+uint32_t current_task = 0;
 
 int main(void)
 {
+	Enable_Processor_Faults();
+
+	Tasks_Stack_Init();
+
+	Scheduler_Stack_Init(SCHEDULER_STACK_START);
+
+	Switch_SP_to_PSP();
+
 	SysTick_Init(1000);
-    /* Loop forever */
+
+	/* Loop forever */
 	for(;;);
 }
 
@@ -85,6 +108,60 @@ void SysTick_Init(uint32_t freq)
 	*STK_CTRL  |= (1<<0);					//starts the systick counter
 }
 
+__attribute__((naked)) void Scheduler_Stack_Init(uint32_t scheduler_stack_start)
+{
+	__asm volatile("MSR MSP,%0": :"r" (scheduler_stack_start) : );
+	__asm volatile("BX LR");
+}
+
+
+void Tasks_Stack_Init(void)
+{
+	uint32_t *pPSP;
+	uint16_t j,i;
+	for(i=0;i<MAX_TASKS_COUNT;i++)
+	{
+		pPSP = (uint32_t *)User_tasks_psps[i];
+		pPSP--;
+		*pPSP = 0x01000000;				//Dummy XPSP
+		pPSP--;
+		*pPSP = task_handler[i];		//Dummy return address
+		pPSP--;
+		*pPSP = 0xFFFFFFFD;				//Dummy LR
+
+		for(j=0;j<13;j++)				//R0-R3, R12 + R4-R11
+		{
+			pPSP--;
+			*pPSP =	0x00000000;
+		}
+
+		User_tasks_psps[i] = (uint32_t)pPSP;	//preserv the value of updated PSP
+	}
+}
+
+void Enable_Processor_Faults(void)
+{
+
+}
+
+uint32_t Get_Current_Task_PSP(void)
+{
+	return User_tasks_psps[current_task];
+}
+
+__attribute__((naked)) void Switch_SP_to_PSP(void)
+{
+	/*initialize the PSP*/
+	__asm volatile("PUSH {LR}");			   //store LR in stack
+	__asm volatile("BL Get_Current_Task_PSP"); //get the value of psp for current task
+	__asm volatile("MSR PSP, R0");
+	__asm volatile("POP {LR}");
+
+	/*set SP to PSP using control register*/
+	__asm volatile("MOV R0,#0x20");
+	__asm volatile("MSR CONTROL, R0");
+	__asm volatile("BX LR");
+}
 
 void SysTick_Handler(void)
 {

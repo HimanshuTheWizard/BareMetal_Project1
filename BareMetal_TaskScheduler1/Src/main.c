@@ -74,6 +74,8 @@ int main(void)
 
 	SysTick_Init(1000);
 
+	task1_handler();
+
 	/* Loop forever */
 	for(;;);
 }
@@ -144,11 +146,6 @@ void Enable_Processor_Faults(void)
 
 }
 
-uint32_t Get_Current_Task_PSP(void)
-{
-	return User_tasks_psps[current_task];
-}
-
 __attribute__((naked)) void Switch_SP_to_PSP(void)
 {
 	/*initialize the PSP*/
@@ -163,9 +160,50 @@ __attribute__((naked)) void Switch_SP_to_PSP(void)
 	__asm volatile("BX LR");
 }
 
-void SysTick_Handler(void)
+void update_psp_value(uint32_t current_psp)
 {
+	User_tasks_psps[current_task] = current_psp;
+}
 
+uint32_t Get_Current_Task_PSP(void)
+{
+	return User_tasks_psps[current_task];
+}
+
+void schedule_next_task(void)
+{
+	current_task++;
+	current_task %= MAX_TASKS_COUNT;
+}
+
+__attribute__((naked)) void SysTick_Handler(void)
+{
+	// Context switching takes place in here
+	// Saving context of current task
+	// Get PSP of current task
+	__asm volatile("MRS R0,PSP");
+	// save SF2 registers to stack
+	__asm volatile("STMDB R0!,{R4-R11}");
+	// saving LR value
+	__asm volatile("PUSH {LR}");
+
+	// Update new PSP value
+	__asm volatile("BL update_psp_value");
+
+	// Retrieving context of previous task
+	// Get next task to run
+	__asm volatile("BL schedule_next_task");
+	// Get PSP of next task
+	__asm volatile("BL Get_Current_Task_PSP");
+	// load SF2 from memory to registers of corresponding task
+	__asm volatile("LDMIA R0!,{R4-R11}");
+	// Update PSP
+	__asm volatile("MSR PSP,R0");
+
+	// retrieving LR
+	__asm volatile("POP {LR}");
+
+	__asm volatile("BX LR");
 }
 
 

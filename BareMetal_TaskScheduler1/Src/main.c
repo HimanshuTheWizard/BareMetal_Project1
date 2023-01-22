@@ -17,50 +17,22 @@
  */
 
 #include <stdint.h>
-
+#include "main.h"
 #if !defined(__SOFT_FP__) && defined(__ARM_FP)
   #warning "FPU is not initialized, but the project is compiling for an FPU. Please initialize the FPU before use."
 #endif
 
-
-/*---------SRAM AND STACK LAYOUT---------*/
-#define MAX_TASKS_COUNT				(4)
-#define SIZE_OF_TASK_STACK			(1024U)
-#define SIZE_OF_SCHEDULER_STACK		(1024U)
-
-#define START_OF_SRAM				(0x20000000U)
-#define SIZE_OF_SRAM				((192)*(1024))
-#define END_OF_SRAM					((START_OF_SRAM) + (SIZE_OF_SRAM))
-
-#define TASK1_STACK_START			(END_OF_SRAM)
-#define TASK2_STACK_START			((END_OF_SRAM) + 1*(SIZE_OF_TASK_STACK))
-#define TASK3_STACK_START			((END_OF_SRAM) + 2*(SIZE_OF_TASK_STACK))
-#define TASK4_STACK_START			((END_OF_SRAM) + 3*(SIZE_OF_TASK_STACK))
-#define SCHEDULER_STACK_START		((END_OF_SRAM) + 4*(SIZE_OF_TASK_STACK))
-
-/*---------CLOCK CONFIGURATION---------*/
-#define HSI_CLOCK					(16000000)
-#define SYSTICK_CLOCK				(HSI_CLOCK)
-
-/*---------USER TASK FUNCTION DECLARATION---------*/
-void task1_handler(void);
-void task2_handler(void);
-void task3_handler(void);
-void task4_handler(void);
-
-void SysTick_Init(uint32_t count_val);
-void Tasks_Stack_Init(void);
-void Enable_Processor_Faults(void);
-uint32_t Get_Current_Task_PSP(void);
-
-__attribute__((naked)) void Scheduler_Stack_Init(uint32_t scheduler_stack_start);
-__attribute__((naked)) void Switch_SP_to_PSP(void);
-
+typedef struct
+{
+	uint32_t psp_value;
+	uint32_t block_count;
+	uint8_t running_state;
+	void (*task_handler)(void);
+}TCB_t;
 
 /*---------GLOBAL VARIABLES---------*/
-uint32_t User_tasks_psps[MAX_TASKS_COUNT] = {TASK1_STACK_START, TASK2_STACK_START, TASK3_STACK_START, TASK4_STACK_START};
-uint32_t task_handler[MAX_TASKS_COUNT] = {(uint32_t)task1_handler, (uint32_t)task2_handler, (uint32_t)task3_handler, (uint32_t)task4_handler};
 uint32_t current_task = 0;
+TCB_t User_task_ctl_block[MAX_TASKS_COUNT];
 
 int main(void)
 {
@@ -72,7 +44,9 @@ int main(void)
 
 	Switch_SP_to_PSP();
 
-	SysTick_Init(1000);
+	led_init_all();
+
+	SysTick_Init(TICK_HZ);
 
 	task1_handler();
 
@@ -82,20 +56,32 @@ int main(void)
 
 void task1_handler(void)
 {
-
+	led_on(LED_GREEN);
+	delay(DELAY_COUNT_1S);
+	led_off(LED_GREEN);
+	delay(DELAY_COUNT_1S);
 }
 
 void task2_handler(void)
 {
-
+	led_on(LED_ORANGE);
+	delay(DELAY_COUNT_500MS);
+	led_off(LED_ORANGE);
+	delay(DELAY_COUNT_500MS);
 }
 void task3_handler(void)
 {
-
+	led_on(LED_RED);
+	delay(DELAY_COUNT_250MS);
+	led_off(LED_RED);
+	delay(DELAY_COUNT_250MS);
 }
 void task4_handler(void)
 {
-
+	led_on(LED_BLUE);
+	delay(DELAY_COUNT_125MS);
+	led_off(LED_BLUE);
+	delay(DELAY_COUNT_125MS);
 }
 void SysTick_Init(uint32_t freq)
 {
@@ -121,13 +107,29 @@ void Tasks_Stack_Init(void)
 {
 	uint32_t *pPSP;
 	uint16_t j,i;
+
+	User_task_ctl_block[0].psp_value = TASK1_STACK_START;
+	User_task_ctl_block[1].psp_value = TASK2_STACK_START;
+	User_task_ctl_block[2].psp_value = TASK3_STACK_START;
+	User_task_ctl_block[3].psp_value = TASK4_STACK_START;
+
+	User_task_ctl_block[0].task_handler = task1_handler;
+	User_task_ctl_block[1].task_handler = task2_handler;
+	User_task_ctl_block[2].task_handler = task3_handler;
+	User_task_ctl_block[3].task_handler = task4_handler;
+
+	User_task_ctl_block[0].running_state = BLOCKED_STATE;
+	User_task_ctl_block[1].running_state = BLOCKED_STATE;
+	User_task_ctl_block[2].running_state = BLOCKED_STATE;
+	User_task_ctl_block[3].running_state = BLOCKED_STATE;
+
 	for(i=0;i<MAX_TASKS_COUNT;i++)
 	{
-		pPSP = (uint32_t *)User_tasks_psps[i];
+		pPSP = (uint32_t *)User_task_ctl_block[i].psp_value;
 		pPSP--;
 		*pPSP = 0x01000000;				//Dummy XPSP
 		pPSP--;
-		*pPSP = task_handler[i];		//Dummy return address
+		*pPSP = (uint32_t)User_task_ctl_block[i].task_handler;		//Dummy return address
 		pPSP--;
 		*pPSP = 0xFFFFFFFD;				//Dummy LR
 
@@ -137,7 +139,7 @@ void Tasks_Stack_Init(void)
 			*pPSP =	0x00000000;
 		}
 
-		User_tasks_psps[i] = (uint32_t)pPSP;	//preserv the value of updated PSP
+		User_task_ctl_block[i].psp_value = (uint32_t)pPSP;	//preserv the value of updated PSP
 	}
 }
 
@@ -162,12 +164,12 @@ __attribute__((naked)) void Switch_SP_to_PSP(void)
 
 void update_psp_value(uint32_t current_psp)
 {
-	User_tasks_psps[current_task] = current_psp;
+	User_task_ctl_block[current_task].psp_value = current_psp;
 }
 
 uint32_t Get_Current_Task_PSP(void)
 {
-	return User_tasks_psps[current_task];
+	return User_task_ctl_block[current_task].psp_value;
 }
 
 void schedule_next_task(void)

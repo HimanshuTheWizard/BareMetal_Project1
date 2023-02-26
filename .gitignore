@@ -3,4 +3,7 @@
 .metadata/
 BareMetal_TaskScheduler1/.settings/
 BareMetal_TaskScheduler1/.settings/language.settings.xml
+BareMetal_TaskScheduler1/Release/
+BareMetal_TaskScheduler1/final.launch
+
 
